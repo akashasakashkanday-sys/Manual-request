@@ -1043,7 +1043,7 @@ function triggerEmailLaunch() {
             };
             
             // 4. Determine endpoint
-            const apiEndpoint = window.location.protocol === 'file:' ? 'http://localhost:8080/api/email' : '/api/email';
+            const apiEndpoint = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? '/api/email' : 'http://localhost:8080/api/email';
             
             return fetch(apiEndpoint, {
                 method: 'POST',
@@ -1068,73 +1068,103 @@ function triggerEmailLaunch() {
             }
         })
         .catch(err => {
-            console.warn("Direct Outlook attachment failed, falling back to manual workflow: ", err);
-            toggleLoadingState(false);
+            console.warn("Direct Outlook attachment failed, trying Web Share API fallback: ", err);
             
-            // Show email helper modal with instructions
             const pdfFilename = getPDFFilename();
             const excelFilename = getExcelFilename();
-            const helperFilenameElem = document.getElementById("helperFilename");
-            if (helperFilenameElem) {
-                helperFilenameElem.textContent = pdfFilename;
-            }
             
-            const helperStepsContainer = document.querySelector(".helper-steps");
-            if (helperStepsContainer) {
-                helperStepsContainer.innerHTML = `
-                    <div style="margin-bottom: 10px; display: flex; gap: 8px; align-items: start;">
-                        <span style="background: var(--accent-orange); color: white; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">1</span>
-                        <span>Both your **Material Request PDF** and **FBOM Excel** sheets have been downloaded: <br>
-                        <strong style="font-family: monospace; color: var(--accent-orange); word-break: break-all;">${pdfFilename}</strong><br>
-                        <strong style="font-family: monospace; color: var(--accent-orange); word-break: break-all;">${excelFilename}</strong></span>
-                    </div>
-                    <div style="margin-bottom: 10px; display: flex; gap: 8px; align-items: start;">
-                        <span style="background: var(--accent-orange); color: white; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">2</span>
-                        <span>An Outlook email has been launched in the background with pre-filled CCs (<strong>gbabin@qiworks.com; mvancha@qiworks.com</strong>).</span>
-                    </div>
-                    <div style="display: flex; gap: 8px; align-items: start;">
-                        <span style="background: var(--accent-orange); color: white; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">3</span>
-                        <span>Simply **drag & drop** both downloaded files into the Outlook window to attach them!</span>
-                    </div>
-                `;
-            }
-            
-            const emailHelperModal = document.getElementById("emailHelperModal");
-            if (emailHelperModal) {
-                emailHelperModal.classList.remove("hidden");
-            }
-            
-            // Run manual fallback downloads and mailto launch
-            downloadMaterialRequestPDF();
-            
-            // Generate standard mailto fallback
-            const ccList = "gbabin@qiworks.com; mvancha@qiworks.com";
-            const subjectEncoded = encodeURIComponent(`Material Request - Job ${jobNumFinal} - ${jobNameFinal}`);
-            
-            let fallbackBodyText = `Quality Ironworks Operations Division,\n\n`;
-            fallbackBodyText += `A manual material request has been generated for Job #${jobNumFinal} (${jobNameFinal}).\n\n`;
-            fallbackBodyText += `Please find the generated Material Request PDF and FBOM Excel in your Downloads folder and ATTACH them to this email.\n\n`;
-            fallbackBodyText += `SUMMARY:\n`;
-            fallbackBodyText += `------------------------------------------\n`;
-            fallbackBodyText += `* Request Date: ${formatPrintDate(reqDate)}\n`;
-            fallbackBodyText += `* Required Delivery/Ship Date: ${formatPrintDate(delDate)}\n`;
-            fallbackBodyText += `* Job Details: #${jobNumFinal} - ${jobNameFinal}\n`;
-            fallbackBodyText += `* Category: ${category === "Custom" ? document.getElementById("customCategoryName").value : category}\n`;
-            fallbackBodyText += `* Subcategory: ${subcategory}\n`;
-            fallbackBodyText += `* Product Finish: ${finish}\n`;
-            fallbackBodyText += `* Destination: ${location}\n`;
-            fallbackBodyText += `------------------------------------------\n\n`;
-            fallbackBodyText += `Total Line Items: ${lineItems.length} items.\n\n`;
-            fallbackBodyText += `Requested by: Field Engineering Representative\n`;
-            fallbackBodyText += `Quality Ironworks Field Portal System`;
-            
-            const bodyEncoded = encodeURIComponent(fallbackBodyText);
-            const mailtoLink = `mailto:?cc=${ccList}&subject=${subjectEncoded}&body=${bodyEncoded}`;
-            
-            const mailAnchor = document.createElement('a');
-            mailAnchor.href = mailtoLink;
-            mailAnchor.target = '_blank';
-            mailAnchor.click();
+            // Generate raw blobs to share via native Web Share API
+            return generatePDFBlob()
+                .then(pdfBlob => {
+                    const wb = generateFBOMWorkbook();
+                    if (!wb) throw new Error("No items");
+                    const excelBytes = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+                    const excelBlob = new Blob([excelBytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                    
+                    const pdfFile = new File([pdfBlob], pdfFilename, { type: 'application/pdf' });
+                    const excelFile = new File([excelBlob], excelFilename, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                    
+                    if (navigator.canShare && navigator.canShare({ files: [pdfFile, excelFile] })) {
+                        toggleLoadingState(false);
+                        return navigator.share({
+                            files: [pdfFile, excelFile],
+                            title: `Material Request - Job ${jobNumFinal}`,
+                            text: bodyText
+                        });
+                    } else {
+                        throw new Error("Web Share API is not supported on this browser/OS or for these files.");
+                    }
+                })
+                .then(() => {
+                    console.log("Shared successfully via Web Share API");
+                })
+                .catch(shareErr => {
+                    console.warn("Web Share API failed, falling back to manual workflow: ", shareErr);
+                    toggleLoadingState(false);
+                    
+                    // Show email helper modal with instructions
+                    const helperFilenameElem = document.getElementById("helperFilename");
+                    if (helperFilenameElem) {
+                        helperFilenameElem.textContent = pdfFilename;
+                    }
+                    
+                    const helperStepsContainer = document.querySelector(".helper-steps");
+                    if (helperStepsContainer) {
+                        helperStepsContainer.innerHTML = `
+                            <div style="margin-bottom: 10px; display: flex; gap: 8px; align-items: start;">
+                                <span style="background: var(--accent-orange); color: white; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">1</span>
+                                <span>Both your **Material Request PDF** and **FBOM Excel** sheets have been downloaded: <br>
+                                <strong style="font-family: monospace; color: var(--accent-orange); word-break: break-all;">${pdfFilename}</strong><br>
+                                <strong style="font-family: monospace; color: var(--accent-orange); word-break: break-all;">${excelFilename}</strong></span>
+                            </div>
+                            <div style="margin-bottom: 10px; display: flex; gap: 8px; align-items: start;">
+                                <span style="background: var(--accent-orange); color: white; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">2</span>
+                                <span>An Outlook email has been launched in the background with pre-filled CCs (<strong>gbabin@qiworks.com; mvancha@qiworks.com</strong>).</span>
+                            </div>
+                            <div style="display: flex; gap: 8px; align-items: start;">
+                                <span style="background: var(--accent-orange); color: white; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">3</span>
+                                <span>Simply **drag & drop** both downloaded files into the Outlook window to attach them!</span>
+                            </div>
+                        `;
+                    }
+                    
+                    const emailHelperModal = document.getElementById("emailHelperModal");
+                    if (emailHelperModal) {
+                        emailHelperModal.classList.add("hidden");
+                    }
+                    
+                    // Run manual fallback downloads and mailto launch
+                    downloadMaterialRequestPDF();
+                    
+                    // Generate standard mailto fallback
+                    const ccList = "gbabin@qiworks.com; mvancha@qiworks.com";
+                    const subjectEncoded = encodeURIComponent(`Material Request - Job ${jobNumFinal} - ${jobNameFinal}`);
+                    
+                    let fallbackBodyText = `Quality Ironworks Operations Division,\n\n`;
+                    fallbackBodyText += `A manual material request has been generated for Job #${jobNumFinal} (${jobNameFinal}).\n\n`;
+                    fallbackBodyText += `Please find the generated Material Request PDF and FBOM Excel in your Downloads folder and ATTACH them to this email.\n\n`;
+                    fallbackBodyText += `SUMMARY:\n`;
+                    fallbackBodyText += `------------------------------------------\n`;
+                    fallbackBodyText += `* Request Date: ${formatPrintDate(reqDate)}\n`;
+                    fallbackBodyText += `* Required Delivery/Ship Date: ${formatPrintDate(delDate)}\n`;
+                    fallbackBodyText += `* Job Details: #${jobNumFinal} - ${jobNameFinal}\n`;
+                    fallbackBodyText += `* Category: ${category === "Custom" ? document.getElementById("customCategoryName").value : category}\n`;
+                    fallbackBodyText += `* Subcategory: ${subcategory}\n`;
+                    fallbackBodyText += `* Product Finish: ${finish}\n`;
+                    fallbackBodyText += `* Destination: ${location}\n`;
+                    fallbackBodyText += `------------------------------------------\n\n`;
+                    fallbackBodyText += `Total Line Items: ${lineItems.length} items.\n\n`;
+                    fallbackBodyText += `Requested by: Field Engineering Representative\n`;
+                    fallbackBodyText += `Quality Ironworks Field Portal System`;
+                    
+                    const bodyEncoded = encodeURIComponent(fallbackBodyText);
+                    const mailtoLink = `mailto:?cc=${ccList}&subject=${subjectEncoded}&body=${bodyEncoded}`;
+                    
+                    const mailAnchor = document.createElement('a');
+                    mailAnchor.href = mailtoLink;
+                    mailAnchor.target = '_blank';
+                    mailAnchor.click();
+                });
         });
 }
 
