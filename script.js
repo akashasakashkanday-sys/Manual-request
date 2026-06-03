@@ -1078,15 +1078,49 @@ function triggerEmailLaunch() {
                     const wb = generateFBOMWorkbook();
                     if (!wb) throw new Error("No items");
                     const excelBytes = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
-                    
-                    // Use generic octet-stream MIME type to prevent browser checks from blocking Excel files in Web Share
                     const excelBlob = new Blob([excelBytes], { type: 'application/octet-stream' });
                     
                     const pdfFile = new File([pdfBlob], pdfFilename, { type: 'application/pdf' });
                     const excelFile = new File([excelBlob], excelFilename, { type: 'application/octet-stream' });
                     
-                    // 1. Try to share BOTH PDF and Excel files (with safe generic MIME for Excel)
-                    if (navigator.canShare && navigator.canShare({ files: [pdfFile, excelFile] })) {
+                    // On mobile, attempt direct sharing first (bypassing canShare which can return false false-positives on mobile Chrome)
+                    if (isMobile && navigator.share) {
+                        toggleLoadingState(false);
+                        console.log("Mobile device detected. Attempting direct Web Share...");
+                        
+                        return navigator.share({
+                            files: [pdfFile, excelFile],
+                            title: `Material Request - Job ${jobNumFinal}`,
+                            text: bodyText
+                        }).catch(shareErr => {
+                            if (shareErr.name === 'AbortError' || shareErr.message === "Share canceled") {
+                                console.log("User cancelled sharing.");
+                                throw new Error("User cancelled sharing");
+                            }
+                            
+                            // If sharing both files fails, try sharing only the PDF (highly compatible) and download Excel in background
+                            console.warn("Sharing both files failed. Attempting PDF-only share...", shareErr);
+                            downloadFBOMExcel();
+                            
+                            return navigator.share({
+                                files: [pdfFile],
+                                title: `Material Request - Job ${jobNumFinal}`,
+                                text: bodyText
+                            });
+                        }).catch(pdfShareErr => {
+                            if (pdfShareErr.message === "User cancelled sharing" || pdfShareErr.name === 'AbortError' || pdfShareErr.message === "Share canceled") {
+                                console.log("User cancelled PDF share.");
+                                throw new Error("User cancelled sharing");
+                            }
+                            
+                            // If sharing completely fails on mobile Chrome/Safari, download both files natively
+                            console.warn("Web Share completely failed on mobile. Downloading files directly...", pdfShareErr);
+                            downloadMaterialRequestPDF();
+                            alert("Your browser does not support direct attachments. The Material Request PDF and FBOM Excel have been downloaded to your device.");
+                        });
+                    }
+                    // On desktop, use standard canShare check if available
+                    else if (navigator.canShare && navigator.canShare({ files: [pdfFile, excelFile] })) {
                         toggleLoadingState(false);
                         return navigator.share({
                             files: [pdfFile, excelFile],
@@ -1094,35 +1128,13 @@ function triggerEmailLaunch() {
                             text: bodyText
                         }).catch(shareErr => {
                             if (shareErr.name === 'AbortError') {
-                                console.log("User cancelled sharing.");
                                 throw new Error("User cancelled sharing");
                             } else {
                                 throw shareErr;
                             }
                         });
-                    }
-                    // 2. Fallback for mobile devices: Share only the PDF (which is widely allowed) and download the Excel file automatically in the background
-                    else if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
-                        toggleLoadingState(false);
-                        
-                        // Automatically download the Excel file in the background so the user gets it
-                        downloadFBOMExcel();
-                        
-                        return navigator.share({
-                            files: [pdfFile],
-                            title: `Material Request - Job ${jobNumFinal}`,
-                            text: bodyText
-                        }).catch(shareErr => {
-                            if (shareErr.name === 'AbortError') {
-                                console.log("User cancelled sharing.");
-                                throw new Error("User cancelled sharing");
-                            } else {
-                                throw shareErr;
-                            }
-                        });
-                    }
-                    // 3. If Web Share is not supported at all, fall back to EML download
-                    else {
+                    } else {
+                        // Desktop fallback: Trigger EML download
                         throw new Error("Web Share not supported");
                     }
                 })
