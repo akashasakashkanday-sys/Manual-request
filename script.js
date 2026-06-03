@@ -917,7 +917,9 @@ function downloadMaterialRequestPDF() {
             const link = document.createElement('a');
             link.href = URL.createObjectURL(pdfBlob);
             link.download = pdfFilename;
+            document.body.appendChild(link); // Append to body to ensure it clicks correctly in all mobile browsers
             link.click();
+            document.body.removeChild(link); // Clean up immediately after click
             URL.revokeObjectURL(link.href);
             
             console.log("Material Request PDF generated successfully!");
@@ -971,6 +973,9 @@ function openEmailWorkflow() {
 
 // Trigger direct Outlook integration with mailto fallback
 function triggerEmailLaunch() {
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+                     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+                     
     // Show loading state
     toggleLoadingState(true);
     
