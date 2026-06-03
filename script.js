@@ -1078,12 +1078,14 @@ function triggerEmailLaunch() {
                     const wb = generateFBOMWorkbook();
                     if (!wb) throw new Error("No items");
                     const excelBytes = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
-                    const excelBlob = new Blob([excelBytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                    
+                    // Use generic octet-stream MIME type to prevent browser checks from blocking Excel files in Web Share
+                    const excelBlob = new Blob([excelBytes], { type: 'application/octet-stream' });
                     
                     const pdfFile = new File([pdfBlob], pdfFilename, { type: 'application/pdf' });
-                    const excelFile = new File([excelBlob], excelFilename, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                    const excelFile = new File([excelBlob], excelFilename, { type: 'application/octet-stream' });
                     
-                    // Check if Web Share API is available and can share these files (Ideal for Mobile/iOS)
+                    // 1. Try to share BOTH PDF and Excel files (with safe generic MIME for Excel)
                     if (navigator.canShare && navigator.canShare({ files: [pdfFile, excelFile] })) {
                         toggleLoadingState(false);
                         return navigator.share({
@@ -1098,8 +1100,29 @@ function triggerEmailLaunch() {
                                 throw shareErr;
                             }
                         });
-                    } else {
-                        // For desktop or browsers that don't support Web Share for Excel/PDF, trigger EML download
+                    }
+                    // 2. Fallback for mobile devices: Share only the PDF (which is widely allowed) and download the Excel file automatically in the background
+                    else if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+                        toggleLoadingState(false);
+                        
+                        // Automatically download the Excel file in the background so the user gets it
+                        downloadFBOMExcel();
+                        
+                        return navigator.share({
+                            files: [pdfFile],
+                            title: `Material Request - Job ${jobNumFinal}`,
+                            text: bodyText
+                        }).catch(shareErr => {
+                            if (shareErr.name === 'AbortError') {
+                                console.log("User cancelled sharing.");
+                                throw new Error("User cancelled sharing");
+                            } else {
+                                throw shareErr;
+                            }
+                        });
+                    }
+                    // 3. If Web Share is not supported at all, fall back to EML download
+                    else {
                         throw new Error("Web Share not supported");
                     }
                 })
