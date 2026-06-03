@@ -723,8 +723,8 @@ function renderPreviewTable() {
             <td class="col-desc-bottom">${item.desc}</td>
             <td>${item.feet > 0 || item.inches > 0 ? item.feet : '-'}</td>
             <td>${item.feet > 0 || item.inches > 0 ? item.inches : '-'}</td>
-            <td>${item.finish || '-'}</td>
             <td>${item.grade || '-'}</td>
+            <td>${item.finish || '-'}</td>
             <td></td>
         `;
         tbody.appendChild(tr);
@@ -1068,123 +1068,161 @@ function triggerEmailLaunch() {
             }
         })
         .catch(err => {
-            console.warn("Direct Outlook attachment failed, using EML draft fallback: ", err);
+            console.warn("Direct Outlook local server attachment failed. Deciding fallback...", err);
             
             const pdfFilename = getPDFFilename();
             const excelFilename = getExcelFilename();
-            const emlFilename = `Double_Click_to_Email_Job_${jobNumFinal}.eml`;
             
             return generatePDFBlob()
                 .then(pdfBlob => {
-                    return blobToBase64(pdfBlob);
-                })
-                .then(pdfBase64 => {
                     const wb = generateFBOMWorkbook();
-                    if (!wb) {
-                        throw new Error("No line items to generate FBOM Excel.");
-                    }
-                    const excelBase64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+                    if (!wb) throw new Error("No items");
+                    const excelBytes = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+                    const excelBlob = new Blob([excelBytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
                     
-                    // Generate unique boundary
-                    const boundary = "NextPart_" + Math.random().toString(36).substring(2) + Date.now().toString(36);
+                    const pdfFile = new File([pdfBlob], pdfFilename, { type: 'application/pdf' });
+                    const excelFile = new File([excelBlob], excelFilename, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
                     
-                    // Wrap base64 contents to 76 characters for MIME compliance
-                    const wrapFunc = (str) => {
-                        if (!str) return "";
-                        const lines = [];
-                        for (let i = 0; i < str.length; i += 76) {
-                            lines.push(str.substring(i, i + 76));
-                        }
-                        return lines.join("\r\n");
-                    };
-                    
-                    const pdfBase64Wrapped = wrapFunc(pdfBase64);
-                    const excelBase64Wrapped = wrapFunc(excelBase64);
-                    
-                    const ccList = "gbabin@qiworks.com; mvancha@qiworks.com";
-                    const subjectText = `Material Request - Job ${jobNumFinal} - ${jobNameFinal}`;
-                    
-                    // Construct EML MIME structure
-                    const emlParts = [];
-                    emlParts.push("X-Unsent: 1");
-                    emlParts.push(`Cc: ${ccList}`);
-                    emlParts.push(`Subject: ${subjectText}`);
-                    emlParts.push("MIME-Version: 1.0");
-                    emlParts.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
-                    emlParts.push("");
-                    emlParts.push(`--${boundary}`);
-                    emlParts.push("Content-Type: text/plain; charset=\"utf-8\"");
-                    emlParts.push("Content-Transfer-Encoding: 7bit");
-                    emlParts.push("");
-                    emlParts.push(bodyText);
-                    emlParts.push("");
-                    emlParts.push(`--${boundary}`);
-                    emlParts.push(`Content-Type: application/pdf; name="${pdfFilename}"`);
-                    emlParts.push("Content-Transfer-Encoding: base64");
-                    emlParts.push(`Content-Disposition: attachment; filename="${pdfFilename}"`);
-                    emlParts.push("");
-                    emlParts.push(pdfBase64Wrapped);
-                    emlParts.push("");
-                    emlParts.push(`--${boundary}`);
-                    emlParts.push(`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; name="${excelFilename}"`);
-                    emlParts.push("Content-Transfer-Encoding: base64");
-                    emlParts.push(`Content-Disposition: attachment; filename="${excelFilename}"`);
-                    emlParts.push("");
-                    emlParts.push(excelBase64Wrapped);
-                    emlParts.push("");
-                    emlParts.push(`--${boundary}--`);
-                    
-                    const emlContent = emlParts.join("\r\n");
-                    const emlBlob = new Blob([emlContent], { type: "message/rfc822" });
-                    
-                    // Trigger download of EML file
-                    const link = document.createElement('a');
-                    link.href = URL.createObjectURL(emlBlob);
-                    link.download = emlFilename;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    URL.revokeObjectURL(link.href);
-                    
-                    toggleLoadingState(false);
-                    
-                    // Show email helper modal with instructions
-                    const emailHelperModal = document.getElementById("emailHelperModal");
-                    if (emailHelperModal) {
-                        const modalTitle = emailHelperModal.querySelector("h2");
-                        if (modalTitle) {
-                            modalTitle.textContent = "Email Draft Generated!";
-                        }
-                        const modalDesc = emailHelperModal.querySelector("p");
-                        if (modalDesc) {
-                            modalDesc.textContent = "Your Outlook draft with attached PDF and Excel is ready to open.";
-                        }
-                        
-                        const helperStepsContainer = emailHelperModal.querySelector(".helper-steps");
-                        if (helperStepsContainer) {
-                            helperStepsContainer.innerHTML = `
-                                <div style="margin-bottom: 10px; display: flex; gap: 8px; align-items: start;">
-                                    <span style="background: var(--accent-orange); color: white; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">1</span>
-                                    <span>We have generated a pre-attached email draft: <br>
-                                    <strong style="font-family: monospace; color: var(--accent-orange); word-break: break-all;">${emlFilename}</strong></span>
-                                </div>
-                                <div style="margin-bottom: 10px; display: flex; gap: 8px; align-items: start;">
-                                    <span style="background: var(--accent-orange); color: white; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">2</span>
-                                    <span><strong>Double-click</strong> or open the downloaded file from your browser's downloads bar.</span>
-                                </div>
-                                <div style="display: flex; gap: 8px; align-items: start;">
-                                    <span style="background: var(--accent-orange); color: white; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">3</span>
-                                    <span>It will open directly in Outlook with the PDF and Excel sheets **already attached**, CC filled, and body pre-written. Just hit **Send**!</span>
-                                </div>
-                            `;
-                        }
-                        emailHelperModal.classList.remove("hidden");
+                    // Check if Web Share API is available and can share these files (Ideal for Mobile/iOS)
+                    if (navigator.canShare && navigator.canShare({ files: [pdfFile, excelFile] })) {
+                        toggleLoadingState(false);
+                        return navigator.share({
+                            files: [pdfFile, excelFile],
+                            title: `Material Request - Job ${jobNumFinal}`,
+                            text: bodyText
+                        }).catch(shareErr => {
+                            if (shareErr.name === 'AbortError') {
+                                console.log("User cancelled sharing.");
+                                throw new Error("User cancelled sharing");
+                            } else {
+                                throw shareErr;
+                            }
+                        });
+                    } else {
+                        // For desktop or browsers that don't support Web Share for Excel/PDF, trigger EML download
+                        throw new Error("Web Share not supported");
                     }
                 })
-                .catch(err2 => {
-                    console.error("EML generation failure: ", err2);
-                    toggleLoadingState(false);
-                    alert("Failed to generate the email draft automatically. Please use the Download PDF / Excel buttons and draft the email manually.");
+                .catch(fallbackErr => {
+                    // Avoid triggering EML if user just aborted the share action
+                    if (fallbackErr.message === "User cancelled sharing") {
+                        return;
+                    }
+                    
+                    console.log("Web Share unavailable or failed. Triggering client-side EML compilation: ", fallbackErr);
+                    
+                    const emlFilename = `Double_Click_to_Email_Job_${jobNumFinal}.eml`;
+                    
+                    return generatePDFBlob()
+                        .then(pdfBlob => {
+                            return blobToBase64(pdfBlob);
+                        })
+                        .then(pdfBase64 => {
+                            const wb = generateFBOMWorkbook();
+                            if (!wb) throw new Error("No items");
+                            const excelBase64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+                            
+                            // Generate unique boundary
+                            const boundary = "NextPart_" + Math.random().toString(36).substring(2) + Date.now().toString(36);
+                            
+                            // Wrap base64 contents to 76 characters for MIME compliance
+                            const wrapFunc = (str) => {
+                                if (!str) return "";
+                                const lines = [];
+                                for (let i = 0; i < str.length; i += 76) {
+                                    lines.push(str.substring(i, i + 76));
+                                }
+                                return lines.join("\r\n");
+                            };
+                            
+                            const pdfBase64Wrapped = wrapFunc(pdfBase64);
+                            const excelBase64Wrapped = wrapFunc(excelBase64);
+                            
+                            const ccList = "gbabin@qiworks.com; mvancha@qiworks.com";
+                            const subjectText = `Material Request - Job ${jobNumFinal} - ${jobNameFinal}`;
+                            
+                            // Construct EML MIME structure
+                            const emlParts = [];
+                            emlParts.push("X-Unsent: 1");
+                            emlParts.push(`Cc: ${ccList}`);
+                            emlParts.push(`Subject: ${subjectText}`);
+                            emlParts.push("MIME-Version: 1.0");
+                            emlParts.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+                            emlParts.push("");
+                            emlParts.push(`--${boundary}`);
+                            emlParts.push("Content-Type: text/plain; charset=\"utf-8\"");
+                            emlParts.push("Content-Transfer-Encoding: 7bit");
+                            emlParts.push("");
+                            emlParts.push(bodyText);
+                            emlParts.push("");
+                            emlParts.push(`--${boundary}`);
+                            emlParts.push(`Content-Type: application/pdf; name="${pdfFilename}"`);
+                            emlParts.push("Content-Transfer-Encoding: base64");
+                            emlParts.push(`Content-Disposition: attachment; filename="${pdfFilename}"`);
+                            emlParts.push("");
+                            emlParts.push(pdfBase64Wrapped);
+                            emlParts.push("");
+                            emlParts.push(`--${boundary}`);
+                            emlParts.push(`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; name="${excelFilename}"`);
+                            emlParts.push("Content-Transfer-Encoding: base64");
+                            emlParts.push(`Content-Disposition: attachment; filename="${excelFilename}"`);
+                            emlParts.push("");
+                            emlParts.push(excelBase64Wrapped);
+                            emlParts.push("");
+                            emlParts.push(`--${boundary}--`);
+                            
+                            const emlContent = emlParts.join("\r\n");
+                            const emlBlob = new Blob([emlContent], { type: "message/rfc822" });
+                            
+                            // Trigger download of EML file
+                            const link = document.createElement('a');
+                            link.href = URL.createObjectURL(emlBlob);
+                            link.download = emlFilename;
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                            URL.revokeObjectURL(link.href);
+                            
+                            toggleLoadingState(false);
+                            
+                            // Show email helper modal with instructions
+                            const emailHelperModal = document.getElementById("emailHelperModal");
+                            if (emailHelperModal) {
+                                const modalTitle = emailHelperModal.querySelector("h2");
+                                if (modalTitle) {
+                                    modalTitle.textContent = "Email Draft Generated!";
+                                }
+                                const modalDesc = emailHelperModal.querySelector("p");
+                                if (modalDesc) {
+                                    modalDesc.textContent = "Your Outlook draft with attached PDF and Excel is ready to open.";
+                                }
+                                
+                                const helperStepsContainer = emailHelperModal.querySelector(".helper-steps");
+                                if (helperStepsContainer) {
+                                    helperStepsContainer.innerHTML = `
+                                        <div style="margin-bottom: 10px; display: flex; gap: 8px; align-items: start;">
+                                            <span style="background: var(--accent-orange); color: white; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">1</span>
+                                            <span>We have generated a pre-attached email draft: <br>
+                                            <strong style="font-family: monospace; color: var(--accent-orange); word-break: break-all;">${emlFilename}</strong></span>
+                                        </div>
+                                        <div style="margin-bottom: 10px; display: flex; gap: 8px; align-items: start;">
+                                            <span style="background: var(--accent-orange); color: white; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">2</span>
+                                            <span><strong>Double-click</strong> or open the downloaded file from your browser's downloads bar.</span>
+                                        </div>
+                                        <div style="display: flex; gap: 8px; align-items: start;">
+                                            <span style="background: var(--accent-orange); color: white; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">3</span>
+                                            <span>It will open directly in Outlook with the PDF and Excel sheets **already attached**, CC filled, and body pre-written. Just hit **Send**!</span>
+                                        </div>
+                                    `;
+                                }
+                                emailHelperModal.classList.remove("hidden");
+                            }
+                        })
+                        .catch(err2 => {
+                            console.error("EML generation failure: ", err2);
+                            toggleLoadingState(false);
+                            alert("Failed to generate the email draft automatically. Please use the Download PDF / Excel buttons and draft the email manually.");
+                        });
                 });
         });
 }
