@@ -592,14 +592,50 @@ textarea:focus {
 }
 
 .builder-form-grid {
-    display: grid;
-    grid-template-columns: repeat(12, 1fr);
+    display: flex;
+    flex-wrap: wrap;
     gap: 8px;
+    align-items: end;
 }
 
-.grid-col-2 { grid-column: span 2; }
-.grid-col-4 { grid-column: span 4; }
-.grid-col-6 { grid-column: span 6; }
+.builder-form-grid .form-group {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+}
+
+/* Custom column widths to ensure typed numbers are perfectly visible */
+.builder-col-qty {
+    width: 68px;
+    flex-shrink: 0;
+}
+.builder-col-shape {
+    width: 100px;
+    flex-shrink: 0;
+}
+.builder-col-desc {
+    flex: 2 1 180px;
+}
+.builder-col-ft {
+    width: 68px;
+    flex-shrink: 0;
+}
+.builder-col-in {
+    width: 68px;
+    flex-shrink: 0;
+}
+.builder-col-finish {
+    flex: 1.5 1 140px;
+}
+
+/* Center numbers and reduce padding in narrow input fields so numbers are fully visible */
+.builder-col-qty input,
+.builder-col-ft input,
+.builder-col-in input {
+    padding-left: 6px;
+    padding-right: 6px;
+    text-align: center;
+}
 
 @media (max-width: 600px) {
     .builder-form-grid > div {
@@ -1662,3 +1698,56 @@ body.light-theme .helper-steps {
         font-size: 2rem;
     }
 }
+
+/* Spinner rotation animation */
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+.spin {
+    display: inline-block;
+    animation: spin 1s linear infinite;
+}
+
+/* Offline PNA warning banner */
+.pna-warning-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(239, 68, 68, 0.05) 100%);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    border-radius: var(--radius-md);
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 4px 15px rgba(239, 68, 68, 0.05);
+}
+.pna-warning-banner.hidden {
+    display: none;
+}
+.warning-icon {
+    font-size: 1.8rem;
+    color: var(--status-danger);
+    flex-shrink: 0;
+}
+.warning-text h4 {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #ef4444;
+    margin: 0 0 2px 0;
+}
+.warning-text p {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    margin: 0;
+    line-height: 1.4;
+}
+.warning-link {
+    color: #ef4444;
+    text-decoration: underline;
+    font-weight: bold;
+}
+.warning-link:hover {
+    color: #ff6b6b;
+}
+
+

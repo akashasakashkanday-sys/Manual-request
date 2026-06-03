@@ -83,8 +83,199 @@ document.addEventListener("DOMContentLoaded", () => {
     initializeFormDefaults();
     buildJobDropdown();
     setupEventListeners();
+    initializeFinishToggles();
+    initializeDraftingCanvas();
     updateLivePreview();
+    
+    // Warn if opened directly as file:// instead of localhost:8080
+    if (window.location.protocol === 'file:') {
+        const warningBanner = document.getElementById("privateNetworkWarning");
+        if (warningBanner) {
+            warningBanner.classList.remove("hidden");
+        }
+    }
 });
+
+// Get default material grade based on QIW standard layout
+function getDefaultGrade(shape) {
+    if (!shape) return "A36";
+    const s = shape.toUpperCase().trim();
+    if (s === "W" || s === "WT") {
+        return "A992";
+    } else if (s === "HSS" || s === "HSSR") {
+        return "A500 Gr. B";
+    } else if (s === "PIPE") {
+        return "A53 Gr. B";
+    } else if (s === "C" || s === "MC" || s === "L" || s === "PL" || s === "SQBR" || s === "GR") {
+        return "A36";
+    } else if (s === "MDG") {
+        return "A653";
+    } else if (s === "WWM") {
+        return "A1064";
+    } else {
+        return "A36"; // Fallback default
+    }
+}
+
+// Manage Product Finish / Item Builder Finish state
+function initializeFinishToggles() {
+    const applyFinishCheckbox = document.getElementById("applyFinishToAll");
+    const topFinishSelect = document.getElementById("productFinish");
+    const customProductFinishGroup = document.getElementById("customProductFinishGroup");
+    const customProductFinishInput = document.getElementById("customProductFinish");
+    
+    const itemFinishSelect = document.getElementById("itemFinish");
+    const customItemFinishInput = document.getElementById("customItemFinish");
+
+    function syncFinishState() {
+        if (applyFinishCheckbox.checked) {
+            itemFinishSelect.value = topFinishSelect.value;
+            customItemFinishInput.value = customProductFinishInput.value;
+            
+            if (topFinishSelect.value === "Custom") {
+                customItemFinishInput.classList.remove("hidden");
+            } else {
+                customItemFinishInput.classList.add("hidden");
+            }
+            
+            itemFinishSelect.disabled = true;
+            customItemFinishInput.disabled = true;
+        } else {
+            itemFinishSelect.disabled = false;
+            customItemFinishInput.disabled = false;
+        }
+    }
+
+    topFinishSelect.addEventListener("change", (e) => {
+        if (e.target.value === "Custom") {
+            customProductFinishGroup.classList.remove("hidden");
+            customProductFinishGroup.classList.add("open");
+            customProductFinishInput.required = true;
+            customProductFinishInput.focus();
+        } else {
+            customProductFinishGroup.classList.remove("open");
+            setTimeout(() => {
+                if (!customProductFinishGroup.classList.contains("open")) customProductFinishGroup.classList.add("hidden");
+            }, 350);
+            customProductFinishInput.required = false;
+            customProductFinishInput.value = "";
+        }
+        if (applyFinishCheckbox.checked) {
+            syncFinishState();
+        }
+        updateLivePreview();
+    });
+
+    customProductFinishInput.addEventListener("input", () => {
+        if (applyFinishCheckbox.checked) {
+            syncFinishState();
+        }
+        updateLivePreview();
+    });
+
+    itemFinishSelect.addEventListener("change", (e) => {
+        if (e.target.value === "Custom") {
+            customItemFinishInput.classList.remove("hidden");
+            customItemFinishInput.focus();
+        } else {
+            customItemFinishInput.classList.add("hidden");
+            customItemFinishInput.value = "";
+        }
+    });
+
+    applyFinishCheckbox.addEventListener("change", syncFinishState);
+
+    syncFinishState();
+}
+
+// Drawing Canvas Drafting Area Logic
+let isDrawing = false;
+let currentTool = 'pencil'; // 'pencil' or 'eraser'
+
+function initializeDraftingCanvas() {
+    const canvas = document.getElementById('draftingCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    // Configure initial line settings
+    ctx.strokeStyle = '#000000';
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 2;
+
+    function getCoords(e) {
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        const x = (clientX - rect.left) * (canvas.width / rect.width);
+        const y = (clientY - rect.top) * (canvas.height / rect.height);
+        return { x, y };
+    }
+
+    function startDrawing(e) {
+        isDrawing = true;
+        const pos = getCoords(e);
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y);
+        if (e.cancelable) e.preventDefault();
+    }
+
+    function draw(e) {
+        if (!isDrawing) return;
+        const pos = getCoords(e);
+        
+        if (currentTool === 'eraser') {
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 16;
+        } else {
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+        }
+        
+        ctx.lineTo(pos.x, pos.y);
+        ctx.stroke();
+        if (e.cancelable) e.preventDefault();
+    }
+
+    function stopDrawing() {
+        isDrawing = false;
+    }
+
+    canvas.addEventListener('mousedown', startDrawing);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDrawing);
+    canvas.addEventListener('mouseleave', stopDrawing);
+
+    canvas.addEventListener('touchstart', startDrawing, { passive: false });
+    canvas.addEventListener('touchmove', draw, { passive: false });
+    canvas.addEventListener('touchend', stopDrawing);
+
+    const btnPencil = document.getElementById('toolPencil');
+    const btnEraser = document.getElementById('toolEraser');
+    const btnClear = document.getElementById('toolClear');
+
+    if (btnPencil && btnEraser && btnClear) {
+        btnPencil.addEventListener('click', () => {
+            currentTool = 'pencil';
+            btnPencil.classList.add('btn-primary');
+            btnPencil.classList.remove('btn-secondary');
+            btnEraser.classList.add('btn-secondary');
+            btnEraser.classList.remove('btn-primary');
+        });
+
+        btnEraser.addEventListener('click', () => {
+            currentTool = 'eraser';
+            btnEraser.classList.add('btn-primary');
+            btnEraser.classList.remove('btn-secondary');
+            btnPencil.classList.add('btn-secondary');
+            btnPencil.classList.remove('btn-primary');
+        });
+
+        btnClear.addEventListener('click', () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        });
+    }
+}
 
 // Initialize date inputs and other form fields
 function initializeFormDefaults() {
@@ -206,7 +397,7 @@ function setupEventListeners() {
     });
 
     // Trigger forms validation on enter inside builder fields
-    const builderInputs = ["itemPcs", "itemDesc", "itemFeet", "itemInches"];
+    const builderInputs = ["itemPcs", "itemDesc", "itemFeet", "itemInches", "itemFinish"];
     builderInputs.forEach(id => {
         document.getElementById(id).addEventListener("keypress", (e) => {
             if (e.key === "Enter") {
@@ -244,9 +435,12 @@ function setupEventListeners() {
 
     // User Guide Modal controls
     const guideModal = document.getElementById("userGuideModal");
-    document.getElementById("userGuideBtn").addEventListener("click", () => {
-        guideModal.classList.remove("hidden");
-    });
+    const userGuideBtn = document.getElementById("userGuideBtn");
+    if (userGuideBtn) {
+        userGuideBtn.addEventListener("click", () => {
+            guideModal.classList.remove("hidden");
+        });
+    }
     document.getElementById("userGuideBannerBtn").addEventListener("click", () => {
         guideModal.classList.remove("hidden");
     });
@@ -348,6 +542,9 @@ function addItemFromBuilder() {
     const descInput = document.getElementById("itemDesc");
     const feetInput = document.getElementById("itemFeet");
     const inchesInput = document.getElementById("itemInches");
+    const finishInput = document.getElementById("itemFinish");
+    const applyFinishCheckbox = document.getElementById("applyFinishToAll");
+    const topFinishInput = document.getElementById("productFinish");
     
     const pcs = parseInt(pcsInput.value);
     const shape = shapeSelect.value;
@@ -377,6 +574,43 @@ function addItemFromBuilder() {
         return;
     }
     
+    // Validate finish
+    let finishVal = "";
+    if (applyFinishCheckbox.checked) {
+        let topVal = topFinishInput.value;
+        if (topVal === "Custom") {
+            topVal = document.getElementById("customProductFinish").value.trim();
+        }
+        finishVal = topVal;
+    } else {
+        let selectedVal = finishInput.value;
+        if (selectedVal === "Custom") {
+            selectedVal = document.getElementById("customItemFinish").value.trim();
+        }
+        finishVal = selectedVal;
+    }
+    
+    if (!finishVal) {
+        alert("Please enter or select a finish.");
+        if (applyFinishCheckbox.checked) {
+            if (topFinishInput.value === "Custom") {
+                document.getElementById("customProductFinish").focus();
+            } else {
+                topFinishInput.focus();
+            }
+        } else {
+            if (finishInput.value === "Custom") {
+                document.getElementById("customItemFinish").focus();
+            } else {
+                finishInput.focus();
+            }
+        }
+        return;
+    }
+    
+    // Get default steel grade mapping
+    const gradeVal = getDefaultGrade(shape);
+    
     // Format description text for PDF drawing & preview
     let formattedDesc = "";
     if (shape === "QIW") {
@@ -404,7 +638,9 @@ function addItemFromBuilder() {
         dimension: desc,
         desc: formattedDesc,
         feet: feet,
-        inches: inches
+        inches: inches,
+        finish: finishVal,
+        grade: gradeVal
     });
     
     // Clear builder fields
@@ -413,6 +649,11 @@ function addItemFromBuilder() {
     descInput.value = "";
     feetInput.value = "";
     inchesInput.value = "";
+    if (!applyFinishCheckbox.checked) {
+        finishInput.value = "";
+        document.getElementById("customItemFinish").value = "";
+        document.getElementById("customItemFinish").classList.add("hidden");
+    }
     
     // Re-render UI list & sheet table
     renderItemsList();
@@ -478,13 +719,12 @@ function renderPreviewTable() {
     lineItems.forEach((item, index) => {
         const tr = document.createElement("tr");
         tr.innerHTML = `
-            <td></td>
-            <td></td>
-            <td></td>
             <td>${item.pcs}</td>
             <td class="col-desc-bottom">${item.desc}</td>
             <td>${item.feet > 0 || item.inches > 0 ? item.feet : '-'}</td>
             <td>${item.feet > 0 || item.inches > 0 ? item.inches : '-'}</td>
+            <td>${item.finish || '-'}</td>
+            <td>${item.grade || '-'}</td>
             <td></td>
         `;
         tbody.appendChild(tr);
@@ -497,7 +737,6 @@ function renderPreviewTable() {
         for (let i = 0; i < padCount; i++) {
             const tr = document.createElement("tr");
             tr.innerHTML = `
-                <td></td>
                 <td></td>
                 <td></td>
                 <td></td>
@@ -556,7 +795,11 @@ function updateLivePreview() {
     
     // 4. Map Subcategory & Finish
     const subcat = document.getElementById("subcategoryName").value.trim();
-    const finish = document.getElementById("productFinish").value.trim();
+    const finishSelect = document.getElementById("productFinish").value;
+    let finish = finishSelect;
+    if (finishSelect === "Custom") {
+        finish = document.getElementById("customProductFinish").value.trim();
+    }
     document.getElementById("previewSubcategory").textContent = subcat || "-----";
     document.getElementById("previewFinish").textContent = finish || "-----";
     
@@ -594,7 +837,8 @@ function updateLivePreview() {
 }
 
 // PDF Export Execution (html2pdf.js integration with absolute DOM cloning to fix scroll crops and left boundaries)
-function downloadMaterialRequestPDF() {
+// Helper to generate PDF Blob
+function generatePDFBlob() {
     const original = document.getElementById("requestDocument");
     
     // Create a temporary absolute container at the body level (avoid negative left positions to prevent cropping!)
@@ -620,20 +864,16 @@ function downloadMaterialRequestPDF() {
     
     tempContainer.appendChild(clone);
     document.body.appendChild(tempContainer);
-    
-    // Pull active numbers to formulate unique professional filename
-    const jobNumSelect = document.getElementById("jobNumber").value;
-    let jobNumFinal = "JOB";
-    if (jobNumSelect === "Custom") {
-        jobNumFinal = document.getElementById("customJobNumber").value.trim() || "CUSTOM";
-    } else if (jobNumSelect) {
-        jobNumFinal = jobNumSelect;
+
+    // Copy drawing canvas content to the cloned canvas element
+    const originalCanvas = document.getElementById("draftingCanvas");
+    const clonedCanvas = clone.querySelector("#draftingCanvas");
+    if (originalCanvas && clonedCanvas) {
+        const destCtx = clonedCanvas.getContext('2d');
+        destCtx.drawImage(originalCanvas, 0, 0);
     }
     
-    // Replace any unsafe whitespace and characters
-    const cleanNum = jobNumFinal.replace(/[^a-zA-Z0-9]/g, "_");
-    const dateStamp = new Date().toISOString().slice(0,10);
-    const pdfFilename = `QIW_Material_Request_${cleanNum}_${dateStamp}.pdf`;
+    const pdfFilename = getPDFFilename();
     
     const opt = {
         margin:       0,
@@ -654,26 +894,73 @@ function downloadMaterialRequestPDF() {
         jsPDF:        { unit: 'px', format: [794, 1024], orientation: 'portrait' }
     };
     
-    // Render and trigger direct local download
-    return html2pdf().from(clone).set(opt).save()
-        .then(() => {
-            console.log("Material Request PDF generated successfully!");
+    // Render and return Blob promise
+    return html2pdf().from(clone).set(opt).output('blob')
+        .then(pdfBlob => {
             document.body.removeChild(tempContainer);
-            
-            // Ask user if they also want to download the FBOM Excel
-            setTimeout(() => {
-                if (confirm("Material Request PDF downloaded successfully!\n\nWould you like to also download the FBOM Excel spreadsheet populated with these items?")) {
-                    downloadFBOMExcel();
-                }
-            }, 500);
+            return pdfBlob;
         })
         .catch(err => {
             console.error("PDF generation failure: ", err);
             if (document.body.contains(tempContainer)) {
                 document.body.removeChild(tempContainer);
             }
+            throw err;
+        });
+}
+
+// PDF Export Execution
+function downloadMaterialRequestPDF() {
+    return generatePDFBlob()
+        .then(pdfBlob => {
+            const pdfFilename = getPDFFilename();
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(pdfBlob);
+            link.download = pdfFilename;
+            link.click();
+            URL.revokeObjectURL(link.href);
+            
+            console.log("Material Request PDF generated successfully!");
+            
+            // Automatically download the FBOM Excel sheet without asking
+            setTimeout(() => {
+                downloadFBOMExcel();
+            }, 500);
+        })
+        .catch(err => {
+            console.error("PDF generation failure: ", err);
             alert("Encountered error generating PDF. Please ensure your browser supports modern rendering.");
         });
+}
+
+// Helper to convert blob to base64
+function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const base64String = reader.result.split(',')[1];
+            resolve(base64String);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+}
+
+// Helper to manage loading state during email preparation
+function toggleLoadingState(isLoading) {
+    const emailBtn = document.getElementById("emailBtn");
+    const downloadPdfBtn = document.getElementById("downloadPdfBtn");
+    if (!emailBtn || !downloadPdfBtn) return;
+    
+    if (isLoading) {
+        emailBtn.disabled = true;
+        downloadPdfBtn.disabled = true;
+        emailBtn.innerHTML = `<i class="ph-bold ph-spinner-gap spin"></i> Preparing Email...`;
+    } else {
+        emailBtn.disabled = false;
+        downloadPdfBtn.disabled = false;
+        emailBtn.innerHTML = `<i class="ph-bold ph-envelope-simple"></i> Email Request`;
+    }
 }
 
 // Open Prompt Overlay for Outlook dispatch
@@ -682,9 +969,12 @@ function openEmailWorkflow() {
     emailModal.classList.remove("hidden");
 }
 
-// Trigger direct mailto launcher with CCs, Subject, Body, and download PDF locally
+// Trigger direct Outlook integration with mailto fallback
 function triggerEmailLaunch() {
-    // Pull active numbers to formulate unique professional filename
+    // Show loading state
+    toggleLoadingState(true);
+    
+    // Pull active parameters
     const jobNumSelect = document.getElementById("jobNumber").value;
     let jobNumFinal = "JOB";
     if (jobNumSelect === "Custom") {
@@ -693,46 +983,6 @@ function triggerEmailLaunch() {
         jobNumFinal = jobNumSelect;
     }
     
-    // Replace any unsafe whitespace and characters
-    const cleanNum = jobNumFinal.replace(/[^a-zA-Z0-9]/g, "_");
-    const dateStamp = new Date().toISOString().slice(0,10);
-    const pdfFilename = `QIW_Material_Request_${cleanNum}_${dateStamp}.pdf`;
-    
-    // Populate the helper filename placeholder
-    const helperFilenameElem = document.getElementById("helperFilename");
-    if (helperFilenameElem) {
-        helperFilenameElem.textContent = pdfFilename;
-    }
-    
-    // Customize helper description for direct drag & drop attachment
-    const helperStepsContainer = document.querySelector(".helper-steps");
-    if (helperStepsContainer) {
-        helperStepsContainer.innerHTML = `
-            <div style="margin-bottom: 10px; display: flex; gap: 8px; align-items: start;">
-                <span style="background: var(--accent-orange); color: white; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">1</span>
-                <span>Your Material Request PDF has been downloaded: <br><strong style="font-family: monospace; color: var(--accent-orange); word-break: break-all;">${pdfFilename}</strong></span>
-            </div>
-            <div style="margin-bottom: 10px; display: flex; gap: 8px; align-items: start;">
-                <span style="background: var(--accent-orange); color: white; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">2</span>
-                <span>An Outlook email has been launched in the background with pre-filled CCs (<strong>gbabin@qiworks.com; mvancha@qiworks.com</strong>).</span>
-            </div>
-            <div style="display: flex; gap: 8px; align-items: start;">
-                <span style="background: var(--accent-orange); color: white; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">3</span>
-                <span>Simply **drag and drop** the downloaded PDF directly from your browser's Downloads bar or folder into the opened Outlook window to attach it!</span>
-            </div>
-        `;
-    }
-    
-    // Open the visual Email Helper instructions modal
-    const emailHelperModal = document.getElementById("emailHelperModal");
-    if (emailHelperModal) {
-        emailHelperModal.classList.remove("hidden");
-    }
-    
-    // Generate and download the PDF locally
-    downloadMaterialRequestPDF();
-    
-    // Map email parameters
     let jobNameFinal = "Custom Job";
     if (jobNumSelect && jobNumSelect !== "Custom") {
         const matchingJob = projectsDatabase.find(j => j.number === jobNumSelect);
@@ -743,19 +993,16 @@ function triggerEmailLaunch() {
     const delDate = document.getElementById("deliveryDate").value;
     const category = document.getElementById("categoryName").value;
     const subcategory = document.getElementById("subcategoryName").value;
-    const finish = document.getElementById("productFinish").value;
+    const finishSelect = document.getElementById("productFinish").value;
+    let finish = finishSelect;
+    if (finishSelect === "Custom") {
+        finish = document.getElementById("customProductFinish").value.trim();
+    }
     const location = document.querySelector('input[name="location"]:checked').value;
     
-    // Format cc list
-    const ccList = "gbabin@qiworks.com; mvancha@qiworks.com";
-    
-    // Format email subject
-    const subject = encodeURIComponent(`Material Request - Job ${jobNumFinal} - ${jobNameFinal}`);
-    
-    // Compile very clean, shortened body summary that will never exceed 1000 characters
+    // Compile clean plain-text body summary
     let bodyText = `Quality Ironworks Operations Division,\n\n`;
     bodyText += `A manual material request has been generated for Job #${jobNumFinal} (${jobNameFinal}).\n\n`;
-    bodyText += `Please find the generated Material Request PDF in your Downloads folder and ATTACH it to this email.\n\n`;
     bodyText += `SUMMARY:\n`;
     bodyText += `------------------------------------------\n`;
     bodyText += `* Request Date: ${formatPrintDate(reqDate)}\n`;
@@ -767,19 +1014,128 @@ function triggerEmailLaunch() {
     bodyText += `* Destination: ${location}\n`;
     bodyText += `------------------------------------------\n\n`;
     bodyText += `Total Line Items: ${lineItems.length} items.\n\n`;
+    bodyText += `Please see attached PDF and FBOM files.\n\n`;
     bodyText += `Requested by: Field Engineering Representative\n`;
     bodyText += `Quality Ironworks Field Portal System`;
-    
-    const bodyEncoded = encodeURIComponent(bodyText);
-    
-    // Generate mailto link
-    const mailtoLink = `mailto:?cc=${ccList}&subject=${subject}&body=${bodyEncoded}`;
-    
-    // Launch Outlook (or default systems mail handler) using standard safe anchor click
-    const mailAnchor = document.createElement('a');
-    mailAnchor.href = mailtoLink;
-    mailAnchor.target = '_blank';
-    mailAnchor.click();
+
+    // 1. Generate PDF blob and convert to Base64
+    generatePDFBlob()
+        .then(pdfBlob => {
+            return blobToBase64(pdfBlob);
+        })
+        .then(pdfBase64 => {
+            // 2. Generate Excel base64
+            const wb = generateFBOMWorkbook();
+            if (!wb) {
+                throw new Error("No line items to generate FBOM Excel.");
+            }
+            const excelBase64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+            
+            // 3. Prepare payload
+            const payload = {
+                pdfBase64: pdfBase64,
+                excelBase64: excelBase64,
+                pdfFilename: getPDFFilename(),
+                excelFilename: getExcelFilename(),
+                cc: "gbabin@qiworks.com; mvancha@qiworks.com",
+                subject: `Material Request - Job ${jobNumFinal} - ${jobNameFinal}`,
+                body: bodyText
+            };
+            
+            // 4. Determine endpoint
+            const apiEndpoint = window.location.protocol === 'file:' ? 'http://localhost:8080/api/email' : '/api/email';
+            
+            return fetch(apiEndpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+        })
+        .then(res => {
+            if (!res.ok) {
+                throw new Error("Local server response was not ok");
+            }
+            return res.json();
+        })
+        .then(data => {
+            toggleLoadingState(false);
+            if (data && data.success) {
+                alert("Success! Outlook email compose window has been opened with both the PDF and FBOM files attached.");
+            } else {
+                throw new Error(data.error || "Unknown server error");
+            }
+        })
+        .catch(err => {
+            console.warn("Direct Outlook attachment failed, falling back to manual workflow: ", err);
+            toggleLoadingState(false);
+            
+            // Show email helper modal with instructions
+            const pdfFilename = getPDFFilename();
+            const excelFilename = getExcelFilename();
+            const helperFilenameElem = document.getElementById("helperFilename");
+            if (helperFilenameElem) {
+                helperFilenameElem.textContent = pdfFilename;
+            }
+            
+            const helperStepsContainer = document.querySelector(".helper-steps");
+            if (helperStepsContainer) {
+                helperStepsContainer.innerHTML = `
+                    <div style="margin-bottom: 10px; display: flex; gap: 8px; align-items: start;">
+                        <span style="background: var(--accent-orange); color: white; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">1</span>
+                        <span>Both your **Material Request PDF** and **FBOM Excel** sheets have been downloaded: <br>
+                        <strong style="font-family: monospace; color: var(--accent-orange); word-break: break-all;">${pdfFilename}</strong><br>
+                        <strong style="font-family: monospace; color: var(--accent-orange); word-break: break-all;">${excelFilename}</strong></span>
+                    </div>
+                    <div style="margin-bottom: 10px; display: flex; gap: 8px; align-items: start;">
+                        <span style="background: var(--accent-orange); color: white; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">2</span>
+                        <span>An Outlook email has been launched in the background with pre-filled CCs (<strong>gbabin@qiworks.com; mvancha@qiworks.com</strong>).</span>
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: start;">
+                        <span style="background: var(--accent-orange); color: white; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: bold; flex-shrink: 0; margin-top: 2px;">3</span>
+                        <span>Simply **drag & drop** both downloaded files into the Outlook window to attach them!</span>
+                    </div>
+                `;
+            }
+            
+            const emailHelperModal = document.getElementById("emailHelperModal");
+            if (emailHelperModal) {
+                emailHelperModal.classList.remove("hidden");
+            }
+            
+            // Run manual fallback downloads and mailto launch
+            downloadMaterialRequestPDF();
+            
+            // Generate standard mailto fallback
+            const ccList = "gbabin@qiworks.com; mvancha@qiworks.com";
+            const subjectEncoded = encodeURIComponent(`Material Request - Job ${jobNumFinal} - ${jobNameFinal}`);
+            
+            let fallbackBodyText = `Quality Ironworks Operations Division,\n\n`;
+            fallbackBodyText += `A manual material request has been generated for Job #${jobNumFinal} (${jobNameFinal}).\n\n`;
+            fallbackBodyText += `Please find the generated Material Request PDF and FBOM Excel in your Downloads folder and ATTACH them to this email.\n\n`;
+            fallbackBodyText += `SUMMARY:\n`;
+            fallbackBodyText += `------------------------------------------\n`;
+            fallbackBodyText += `* Request Date: ${formatPrintDate(reqDate)}\n`;
+            fallbackBodyText += `* Required Delivery/Ship Date: ${formatPrintDate(delDate)}\n`;
+            fallbackBodyText += `* Job Details: #${jobNumFinal} - ${jobNameFinal}\n`;
+            fallbackBodyText += `* Category: ${category === "Custom" ? document.getElementById("customCategoryName").value : category}\n`;
+            fallbackBodyText += `* Subcategory: ${subcategory}\n`;
+            fallbackBodyText += `* Product Finish: ${finish}\n`;
+            fallbackBodyText += `* Destination: ${location}\n`;
+            fallbackBodyText += `------------------------------------------\n\n`;
+            fallbackBodyText += `Total Line Items: ${lineItems.length} items.\n\n`;
+            fallbackBodyText += `Requested by: Field Engineering Representative\n`;
+            fallbackBodyText += `Quality Ironworks Field Portal System`;
+            
+            const bodyEncoded = encodeURIComponent(fallbackBodyText);
+            const mailtoLink = `mailto:?cc=${ccList}&subject=${subjectEncoded}&body=${bodyEncoded}`;
+            
+            const mailAnchor = document.createElement('a');
+            mailAnchor.href = mailtoLink;
+            mailAnchor.target = '_blank';
+            mailAnchor.click();
+        });
 }
 
 // Parse dynamic steel descriptions into Shape and Dimensions (size)
@@ -820,11 +1176,38 @@ function parseSteelDescription(desc) {
     };
 }
 
-// Generate SheetJS workbook matching the exact QIW FBOM structure and trigger download
-function downloadFBOMExcel() {
+// Helper to get professional PDF filename
+function getPDFFilename() {
+    const jobNumSelect = document.getElementById("jobNumber").value;
+    let jobNumFinal = "JOB";
+    if (jobNumSelect === "Custom") {
+        jobNumFinal = document.getElementById("customJobNumber").value.trim() || "CUSTOM";
+    } else if (jobNumSelect) {
+        jobNumFinal = jobNumSelect;
+    }
+    const cleanNum = jobNumFinal.replace(/[^a-zA-Z0-9]/g, "_");
+    const dateStamp = new Date().toISOString().slice(0,10);
+    return `QIW_Material_Request_${cleanNum}_${dateStamp}.pdf`;
+}
+
+// Helper to get professional FBOM Excel filename
+function getExcelFilename() {
+    const jobNumSelect = document.getElementById("jobNumber").value;
+    let jobNumFinal = "JOB";
+    if (jobNumSelect === "Custom") {
+        jobNumFinal = document.getElementById("customJobNumber").value.trim() || "CUSTOM";
+    } else if (jobNumSelect) {
+        jobNumFinal = jobNumSelect;
+    }
+    const cleanNum = jobNumFinal.replace(/[^a-zA-Z0-9]/g, "_");
+    const dateStamp = new Date().toISOString().slice(0,10);
+    return `QIW_FBOM_${cleanNum}_${dateStamp}.xlsx`;
+}
+
+// Generate SheetJS workbook matching the exact QIW FBOM structure
+function generateFBOMWorkbook() {
     if (lineItems.length === 0) {
-        alert("Cannot generate FBOM because no line items are added yet.");
-        return;
+        return null;
     }
     
     // Create new empty workbook
@@ -873,9 +1256,8 @@ function downloadFBOMExcel() {
             categoryFinal = document.getElementById("customCategoryName").value.trim();
         }
         
-        // Get dynamic subcategory & finish
+        // Get dynamic subcategory
         const subcategoryFinal = document.getElementById("subcategoryName").value.trim();
-        const finishFinal = document.getElementById("productFinish").value.trim();
         
         // Return 16-field mapping matching headers exactly
         return {
@@ -887,8 +1269,8 @@ function downloadFBOMExcel() {
             "Shape": fbomShape,
             "Dimensions": fbomDim,
             "Length": lengthText,
-            "Grade": "",
-            "Finish": finishFinal,
+            "Grade": item.grade || "A36",
+            "Finish": item.finish,
             "Remark": "",
             "Category": categoryFinal,
             "Sub-Category": subcategoryFinal,
@@ -903,18 +1285,17 @@ function downloadFBOMExcel() {
     
     // Append Worksheet named 'FBOM' to Workbook
     XLSX.utils.book_append_sheet(wb, ws, "FBOM");
-    
-    // Formulate unique file name based on selected Job Number
-    const jobNumSelect = document.getElementById("jobNumber").value;
-    let jobNumFinal = "JOB";
-    if (jobNumSelect === "Custom") {
-        jobNumFinal = document.getElementById("customJobNumber").value.trim() || "CUSTOM";
-    } else if (jobNumSelect) {
-        jobNumFinal = jobNumSelect;
+    return wb;
+}
+
+// Generate SheetJS workbook matching the exact QIW FBOM structure and trigger download
+function downloadFBOMExcel() {
+    const wb = generateFBOMWorkbook();
+    if (!wb) {
+        alert("Cannot generate FBOM because no line items are added yet.");
+        return;
     }
-    const cleanNum = jobNumFinal.replace(/[^a-zA-Z0-9]/g, "_");
-    const dateStamp = new Date().toISOString().slice(0,10);
-    const excelFilename = `QIW_FBOM_${cleanNum}_${dateStamp}.xlsx`;
+    const excelFilename = getExcelFilename();
     
     // Write and download the spreadsheet file
     XLSX.writeFile(wb, excelFilename);

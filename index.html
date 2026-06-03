@@ -43,9 +43,18 @@
                 </div>
             </div>
             <div class="nav-actions">
-                <button id="userGuideBtn" class="btn btn-outline-nav">
-                    <i class="ph-bold ph-book-open"></i> User Guide & Standards
-                </button>
+                <div class="drafting-controls" id="draftingControls" style="display: flex; gap: 8px; align-items: center; background: var(--bg-surface-solid); padding: 4px 8px; border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-right: 8px;">
+                    <span style="font-family: var(--font-headers); font-weight: 700; font-size: 0.72rem; text-transform: uppercase; color: var(--accent-orange); margin-right: 4px;">Drafting Area:</span>
+                    <button type="button" id="toolPencil" class="btn btn-sm btn-primary" title="Pencil Tool" style="padding: 4px 8px; font-size: 0.75rem;">
+                        <i class="ph-bold ph-pencil"></i> Draw
+                    </button>
+                    <button type="button" id="toolEraser" class="btn btn-sm btn-secondary" title="Eraser Tool" style="padding: 4px 8px; font-size: 0.75rem;">
+                        <i class="ph-bold ph-eraser"></i> Eraser
+                    </button>
+                    <button type="button" id="toolClear" class="btn btn-sm btn-secondary" style="color: var(--status-danger); padding: 4px 8px; font-size: 0.75rem;" title="Clear Drafting Area">
+                        <i class="ph-bold ph-trash"></i> Clear All
+                    </button>
+                </div>
                 <button id="themeToggle" class="theme-toggle-btn" aria-label="Toggle theme">
                     <i class="ph-bold ph-moon"></i>
                 </button>
@@ -62,6 +71,15 @@
                 <div class="panel-header">
                     <i class="ph-duotone ph-list-checks icon-accent"></i>
                     <h2>Request Parameters</h2>
+                </div>
+
+                <!-- Private Network Access/Offline Warning Banner -->
+                <div id="privateNetworkWarning" class="pna-warning-banner hidden">
+                    <i class="ph-bold ph-warning-octagon warning-icon"></i>
+                    <div class="warning-text">
+                        <h4>Direct Outlook Attachment Disabled</h4>
+                        <p>You opened this page as a local file. Browsers block direct attachments in offline mode. Please run <code>run_server.ps1</code> and open: <a href="http://localhost:8080/index.html" target="_blank" class="warning-link">http://localhost:8080/index.html</a></p>
+                    </div>
                 </div>
 
                 <!-- Prominent Reference Guides Callout Banner -->
@@ -142,10 +160,11 @@
                                 <select id="categoryName" required>
                                     <option value="" disabled selected>Select Category...</option>
                                     <option value="00 Embeds">00 Embeds</option>
-                                    <option value="01 structural">01 structural</option>
+                                    <option value="01 Structural">01 Structural</option>
                                     <option value="02 Stairs">02 Stairs</option>
                                     <option value="03 Miscellaneous">03 Miscellaneous</option>
-                                    <option value="04 ornamental">04 ornamental</option>
+                                    <option value="04 Ornamental">04 Ornamental</option>
+                                    <option value="Manual Request">Manual Request</option>
                                     <option value="Custom">Custom Category</option>
                                 </select>
                             </div>
@@ -173,7 +192,22 @@
                             <label for="productFinish">Product Finish <span class="required">*</span></label>
                             <div class="input-with-icon">
                                 <i class="ph ph-paint-brush-broad"></i>
-                                <input type="text" id="productFinish" required placeholder="e.g. Red Oxide Primer, Hot Dip Galv">
+                                <select id="productFinish" required>
+                                    <option value="" disabled selected>Select Finish...</option>
+                                    <option value="Primer">Primer</option>
+                                    <option value="Raw">Raw</option>
+                                    <option value="Galvanized">Galvanized</option>
+                                    <option value="Custom">Custom...</option>
+                                </select>
+                            </div>
+                            <div id="customProductFinishGroup" class="collapsible-container hidden" style="margin-top: 4px;">
+                                <input type="text" id="customProductFinish" placeholder="Enter custom finish...">
+                            </div>
+                            <div class="checkbox-container" style="margin-top: 4px;">
+                                <label class="checkbox-label" style="display: flex; align-items: center; gap: 6px; font-size: 0.72rem; text-transform: none; color: var(--text-secondary); cursor: pointer;">
+                                    <input type="checkbox" id="applyFinishToAll" checked style="width: auto; cursor: pointer;">
+                                    Apply this finish to all items
+                                </label>
                             </div>
                         </div>
                         <div class="form-group">
@@ -243,11 +277,11 @@
                             <span class="badge" id="itemCountBadge">0 Items</span>
                         </div>
                         <div class="builder-form-grid">
-                            <div class="form-group grid-col-2">
-                                <label for="itemPcs">No. of Pieces</label>
+                            <div class="form-group builder-col-qty">
+                                <label for="itemPcs">Qty</label>
                                 <input type="number" id="itemPcs" min="1" placeholder="Qty">
                             </div>
-                            <div class="form-group grid-col-2">
+                            <div class="form-group builder-col-shape">
                                 <label for="itemShape">Shape</label>
                                 <select id="itemShape">
                                     <option value="" disabled selected>Shape...</option>
@@ -270,17 +304,28 @@
                                     <option value="QIW">QIW</option>
                                 </select>
                             </div>
-                            <div class="form-group grid-col-4">
+                            <div class="form-group builder-col-desc">
                                 <label for="itemDesc">Dimension</label>
-                                <input type="text" id="itemDesc" placeholder="e.g. 8x10 or clip angles...">
+                                <input type="text" id="itemDesc" placeholder="e.g. 8x10...">
                             </div>
-                            <div class="form-group grid-col-2">
-                                <label for="itemFeet">Length (Ft)</label>
-                                <input type="number" id="itemFeet" min="0" placeholder="Feet">
+                            <div class="form-group builder-col-ft">
+                                <label for="itemFeet">Ft</label>
+                                <input type="number" id="itemFeet" min="0" placeholder="Ft">
                             </div>
-                            <div class="form-group grid-col-2">
-                                <label for="itemInches">Inches</label>
+                            <div class="form-group builder-col-in">
+                                <label for="itemInches">In</label>
                                 <input type="number" id="itemInches" min="0" max="11" placeholder="In">
+                            </div>
+                            <div class="form-group builder-col-finish">
+                                <label for="itemFinish">Finish</label>
+                                <select id="itemFinish">
+                                    <option value="" disabled selected>Finish...</option>
+                                    <option value="Primer">Primer</option>
+                                    <option value="Raw">Raw</option>
+                                    <option value="Galvanized">Galvanized</option>
+                                    <option value="Custom">Custom...</option>
+                                </select>
+                                <input type="text" id="customItemFinish" class="hidden" style="margin-top: 4px;" placeholder="Custom finish">
                             </div>
                         </div>
                         <button type="button" id="addItemBtn" class="btn btn-secondary mt-1 btn-block">
@@ -413,23 +458,24 @@
                                 </table>
 
                                 <!-- Huge White Spacer Area -->
-                                <div class="sheet-blank-spacer"></div>
+                                <div class="sheet-blank-spacer" style="display: flex; align-items: center; justify-content: center; position: relative; min-height: 280px;">
+                                    <canvas id="draftingCanvas" width="740" height="280" style="background-color: transparent; cursor: crosshair; display: block; position: absolute; left: 1px; top: 0;"></canvas>
+                                </div>
 
                                 <!-- Material Items Table (Yellow Theme Bottom Table) -->
                                 <table class="sheet-bottom-table">
                                     <thead>
                                         <tr>
-                                            <th rowspan="2" style="width: 8%;">TOTAL</th>
-                                            <th rowspan="2" style="width: 12%;">SHIP<br>MARK</th>
-                                            <th rowspan="2" style="width: 12%;">PIECE<br>MARK</th>
-                                            <th rowspan="2" style="width: 12%;">NO. OF<br>PIECES</th>
-                                            <th rowspan="2" style="width: 36%;">DESCRIPTION</th>
-                                            <th colspan="2" style="width: 12%;">LENGTH</th>
-                                            <th rowspan="2" style="width: 8%;">REMARKS</th>
+                                            <th rowspan="2" style="width: 10%;">QTY</th>
+                                            <th rowspan="2" style="width: 32%;">DESCRIPTION</th>
+                                            <th colspan="2" style="width: 16%;">LENGTH</th>
+                                            <th rowspan="2" style="width: 16%;">FINISH</th>
+                                            <th rowspan="2" style="width: 12%;">GRADE</th>
+                                            <th rowspan="2" style="width: 14%;">REMARKS</th>
                                         </tr>
                                         <tr>
-                                            <th style="width: 6%;">FEET</th>
-                                            <th style="width: 6%;">INCHES</th>
+                                            <th style="width: 8%;">FT</th>
+                                            <th style="width: 8%;">IN</th>
                                         </tr>
                                     </thead>
                                     <tbody id="previewTableBody">
