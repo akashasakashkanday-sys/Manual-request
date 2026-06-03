@@ -78,6 +78,10 @@ const projectsDatabase = [
 // 2. Line Items State
 let lineItems = [];
 
+// Touch & Mobile Device detection (handles iOS spoofing as macOS on iPad)
+const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+                 (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
 // 3. Document Ready Setup
 document.addEventListener("DOMContentLoaded", () => {
     initializeFormDefaults();
@@ -103,15 +107,17 @@ function getDefaultGrade(shape) {
     if (s === "W" || s === "WT") {
         return "A992";
     } else if (s === "HSS" || s === "HSSR") {
-        return "A500 Gr. B";
+        return "A500";
     } else if (s === "PIPE") {
-        return "A53 Gr. B";
+        return "A53";
     } else if (s === "C" || s === "MC" || s === "L" || s === "PL" || s === "SQBR" || s === "GR") {
         return "A36";
     } else if (s === "MDG") {
         return "A653";
     } else if (s === "WWM") {
         return "A1064";
+    } else if (s === "BY" || s === "QIW") {
+        return "Material";
     } else {
         return "A36"; // Fallback default
     }
@@ -909,25 +915,48 @@ function generatePDFBlob() {
         });
 }
 
+// Helper for triggering file downloads on mobile and desktop
+function triggerDownload(blob, filename, useIframe = false) {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    
+    if (useIframe && isMobile) {
+        // Use hidden iframe to download file to bypass mobile multiple-download block
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = link.href;
+        document.body.appendChild(iframe);
+        setTimeout(() => {
+            document.body.removeChild(iframe);
+            URL.revokeObjectURL(link.href);
+        }, 2000);
+    } else {
+        // Standard anchor click
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => {
+            URL.revokeObjectURL(link.href);
+        }, 200);
+    }
+}
+
 // PDF Export Execution
 function downloadMaterialRequestPDF() {
     return generatePDFBlob()
         .then(pdfBlob => {
             const pdfFilename = getPDFFilename();
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(pdfBlob);
-            link.download = pdfFilename;
-            document.body.appendChild(link); // Append to body to ensure it clicks correctly in all mobile browsers
-            link.click();
-            document.body.removeChild(link); // Clean up immediately after click
-            URL.revokeObjectURL(link.href);
+            
+            // Trigger PDF download using standard anchor click
+            triggerDownload(pdfBlob, pdfFilename, false);
             
             console.log("Material Request PDF generated successfully!");
             
-            // Automatically download the FBOM Excel sheet without asking
+            // Automatically download the FBOM Excel sheet (using iframe method to bypass mobile block)
             setTimeout(() => {
-                downloadFBOMExcel();
-            }, 500);
+                downloadFBOMExcel(true);
+            }, 600);
         })
         .catch(err => {
             console.error("PDF generation failure: ", err);
@@ -973,9 +1002,6 @@ function openEmailWorkflow() {
 
 // Trigger direct Outlook integration with mailto fallback
 function triggerEmailLaunch() {
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
-                     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-                     
     // Show loading state
     toggleLoadingState(true);
     
@@ -1418,7 +1444,7 @@ function generateFBOMWorkbook() {
 }
 
 // Generate SheetJS workbook matching the exact QIW FBOM structure and trigger download
-function downloadFBOMExcel() {
+function downloadFBOMExcel(useIframeOnMobile = false) {
     const wb = generateFBOMWorkbook();
     if (!wb) {
         alert("Cannot generate FBOM because no line items are added yet.");
@@ -1426,7 +1452,13 @@ function downloadFBOMExcel() {
     }
     const excelFilename = getExcelFilename();
     
-    // Write and download the spreadsheet file
-    XLSX.writeFile(wb, excelFilename);
+    if (useIframeOnMobile && isMobile) {
+        const excelBytes = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+        const excelBlob = new Blob([excelBytes], { type: 'application/octet-stream' });
+        triggerDownload(excelBlob, excelFilename, true);
+    } else {
+        // Write and download the spreadsheet file
+        XLSX.writeFile(wb, excelFilename);
+    }
     console.log("FBOM Excel package compiled and downloaded successfully!");
 }
