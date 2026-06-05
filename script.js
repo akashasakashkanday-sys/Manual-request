@@ -915,19 +915,64 @@ function generatePDFBlob() {
         });
 }
 
-// Helper for triggering file downloads on mobile and desktop
+// Helper for triggering file downloads on mobile and desktop (bypasses blob block on file:// mobile Safari/Chrome)
 function triggerDownload(blob, filename) {
+    if (isMobile) {
+        const file = new File([blob], filename, { type: blob.type });
+        // Attempt Web Share API first if supported
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+            navigator.share({
+                files: [file],
+                title: filename,
+                text: `Material Request Portal download: ${filename}`
+            }).catch(shareErr => {
+                console.warn("Mobile Share failed, falling back to data URL preview: ", shareErr);
+                fallbackMobileDownload(blob, filename);
+            });
+            return;
+        } else {
+            fallbackMobileDownload(blob, filename);
+            return;
+        }
+    }
+    
+    // Standard Desktop download
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = filename;
-    
-    // Standard anchor click (most reliable on modern iOS & Android)
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     setTimeout(() => {
         URL.revokeObjectURL(link.href);
-    }, 200);
+    }, 1500);
+}
+
+// Fallback method for mobile when Web Share is blocked or running offline on file:// protocol
+function fallbackMobileDownload(blob, filename) {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+        const dataUrl = reader.result;
+        if (blob.type === 'application/pdf') {
+            // PDF: Open in new tab using iframe to bypass mobile browser block
+            const newTab = window.open();
+            if (newTab) {
+                newTab.document.write(`<iframe src="${dataUrl}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
+                newTab.document.title = filename;
+            } else {
+                window.location.href = dataUrl;
+            }
+        } else {
+            // Excel/Binary: Trigger direct base64 data URL link click
+            const link = document.createElement('a');
+            link.href = dataUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    };
+    reader.readAsDataURL(blob);
 }
 
 // PDF Export Execution
@@ -936,15 +981,15 @@ function downloadMaterialRequestPDF() {
         .then(pdfBlob => {
             const pdfFilename = getPDFFilename();
             
-            // Trigger PDF download using standard anchor click
-            triggerDownload(pdfBlob, pdfFilename, false);
+            // Trigger PDF download using optimized helper
+            triggerDownload(pdfBlob, pdfFilename);
             
             console.log("Material Request PDF generated successfully!");
             
-            // Automatically download the FBOM Excel sheet (using iframe method to bypass mobile block)
+            // Automatically download the FBOM Excel sheet (using same robust helper)
             setTimeout(() => {
-                downloadFBOMExcel(true);
-            }, 600);
+                downloadFBOMExcel();
+            }, 800);
         })
         .catch(err => {
             console.error("PDF generation failure: ", err);
@@ -1003,10 +1048,14 @@ function triggerEmailLaunch() {
     }
     
     let jobNameFinal = "Custom Job";
-    if (jobNumSelect && jobNumSelect !== "Custom") {
+    if (jobNumSelect === "Custom") {
+        jobNameFinal = document.getElementById("customJobName").value.trim() || "Custom Job";
+    } else if (jobNumSelect) {
         const matchingJob = projectsDatabase.find(j => j.number === jobNumSelect);
         jobNameFinal = matchingJob ? matchingJob.name : "-----";
     }
+    
+    const emailSubject = `${jobNumFinal} - ${jobNameFinal} - Manual Request`;
     
     const reqDate = document.getElementById("requestDate").value;
     const delDate = document.getElementById("deliveryDate").value;
@@ -1037,8 +1086,6 @@ function triggerEmailLaunch() {
     bodyText += `Requested by: Field Engineering Representative\n`;
     bodyText += `Quality Ironworks Field Portal System`;
 
-
-
     // 1. Generate PDF blob and convert to Base64
     generatePDFBlob()
         .then(pdfBlob => {
@@ -1059,7 +1106,7 @@ function triggerEmailLaunch() {
                 pdfFilename: getPDFFilename(),
                 excelFilename: getExcelFilename(),
                 cc: "Manual@qiworks.com",
-                subject: "QIW Manual Request",
+                subject: emailSubject,
                 body: bodyText
             };
             
@@ -1099,10 +1146,10 @@ function triggerEmailLaunch() {
                     const wb = generateFBOMWorkbook();
                     if (!wb) throw new Error("No items");
                     const excelBytes = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
-                    const excelBlob = new Blob([excelBytes], { type: 'application/octet-stream' });
+                    const excelBlob = new Blob([excelBytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
                     
                     const pdfFile = new File([pdfBlob], pdfFilename, { type: 'application/pdf' });
-                    const excelFile = new File([excelBlob], excelFilename, { type: 'application/octet-stream' });
+                    const excelFile = new File([excelBlob], excelFilename, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
                     
                     // On mobile, attempt direct sharing first (bypassing canShare which can return false false-positives on mobile Chrome)
                     if (isMobile && navigator.share) {
@@ -1111,7 +1158,7 @@ function triggerEmailLaunch() {
                         
                         return navigator.share({
                             files: [pdfFile, excelFile],
-                            title: `Material Request - Job ${jobNumFinal}`,
+                            title: emailSubject,
                             text: bodyText
                         }).catch(shareErr => {
                             if (shareErr.name === 'AbortError' || shareErr.message === "Share canceled") {
@@ -1125,7 +1172,7 @@ function triggerEmailLaunch() {
                             
                             return navigator.share({
                                 files: [pdfFile],
-                                title: `Material Request - Job ${jobNumFinal}`,
+                                title: emailSubject,
                                 text: bodyText
                             });
                         }).catch(pdfShareErr => {
@@ -1145,7 +1192,7 @@ function triggerEmailLaunch() {
                         toggleLoadingState(false);
                         return navigator.share({
                             files: [pdfFile, excelFile],
-                            title: `Material Request - Job ${jobNumFinal}`,
+                            title: emailSubject,
                             text: bodyText
                         }).catch(shareErr => {
                             if (shareErr.name === 'AbortError') {
@@ -1195,7 +1242,7 @@ function triggerEmailLaunch() {
                             const excelBase64Wrapped = wrapFunc(excelBase64);
                             
                             const ccList = "Manual@qiworks.com";
-                            const subjectText = "QIW Manual Request";
+                            const subjectText = emailSubject;
                             
                             // Construct EML MIME structure
                             const emlParts = [];
@@ -1434,7 +1481,7 @@ function generateFBOMWorkbook() {
 }
 
 // Generate SheetJS workbook matching the exact QIW FBOM structure and trigger download
-function downloadFBOMExcel(useIframeOnMobile = false) {
+function downloadFBOMExcel() {
     const wb = generateFBOMWorkbook();
     if (!wb) {
         alert("Cannot generate FBOM because no line items are added yet.");
@@ -1442,13 +1489,12 @@ function downloadFBOMExcel(useIframeOnMobile = false) {
     }
     const excelFilename = getExcelFilename();
     
-    if (useIframeOnMobile && isMobile) {
-        const excelBytes = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
-        const excelBlob = new Blob([excelBytes], { type: 'application/octet-stream' });
-        triggerDownload(excelBlob, excelFilename, true);
-    } else {
-        // Write and download the spreadsheet file
-        XLSX.writeFile(wb, excelFilename);
-    }
+    // Generate array buffer from SheetJS and wrap in a Blob with correct Excel MIME type
+    const excelBytes = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    const excelBlob = new Blob([excelBytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    
+    // Always trigger download using our robust, mobile-compatible triggerDownload function
+    triggerDownload(excelBlob, excelFilename);
+    
     console.log("FBOM Excel package compiled and downloaded successfully!");
 }
