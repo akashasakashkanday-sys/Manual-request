@@ -1082,7 +1082,7 @@ function triggerEmailLaunch() {
         jobNameFinal = matchingJob ? matchingJob.name : "-----";
     }
     
-    const emailSubject = `${jobNumFinal} - ${jobNameFinal} - Manual Request`;
+    const emailSubject = `${jobNameFinal}-${jobNumFinal}- Manual request`;
     
     const reqDate = document.getElementById("requestDate").value;
     const delDate = document.getElementById("deliveryDate").value;
@@ -1183,13 +1183,21 @@ function triggerEmailLaunch() {
                         toggleLoadingState(false);
                         console.log("Mobile device detected. Attempting direct Web Share...");
                         
+                        // Temporarily override document title to force mobile email apps to use it as the subject
+                        const originalTitle = document.title;
+                        document.title = emailSubject;
+                        
                         return navigator.share({
                             files: [pdfFile, excelFile],
                             title: emailSubject,
                             text: bodyText
+                        }).then(() => {
+                            // Restore original title
+                            document.title = originalTitle;
                         }).catch(shareErr => {
                             if (shareErr.name === 'AbortError' || shareErr.message === "Share canceled") {
                                 console.log("User cancelled sharing.");
+                                document.title = originalTitle;
                                 throw new Error("User cancelled sharing");
                             }
                             
@@ -1201,8 +1209,14 @@ function triggerEmailLaunch() {
                                 files: [pdfFile],
                                 title: emailSubject,
                                 text: bodyText
+                            }).then(() => {
+                                document.title = originalTitle;
+                            }).catch(share2Err => {
+                                document.title = originalTitle;
+                                throw share2Err;
                             });
                         }).catch(pdfShareErr => {
+                            document.title = originalTitle;
                             if (pdfShareErr.message === "User cancelled sharing" || pdfShareErr.name === 'AbortError' || pdfShareErr.message === "Share canceled") {
                                 console.log("User cancelled PDF share.");
                                 throw new Error("User cancelled sharing");
