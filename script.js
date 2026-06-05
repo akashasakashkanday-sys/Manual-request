@@ -1195,7 +1195,7 @@ function triggerEmailLaunch() {
                             
                             // If sharing both files fails, try sharing only the PDF (highly compatible) and download Excel in background
                             console.warn("Sharing both files failed. Attempting PDF-only share...", shareErr);
-                            downloadFBOMExcel();
+                            triggerDownload(excelBlob, excelFilename, true);
                             
                             return navigator.share({
                                 files: [pdfFile],
@@ -1210,7 +1210,10 @@ function triggerEmailLaunch() {
                             
                             // If sharing completely fails on mobile Chrome/Safari, download both files natively
                             console.warn("Web Share completely failed on mobile. Downloading files directly...", pdfShareErr);
-                            downloadMaterialRequestPDF();
+                            fallbackMobileDownload(pdfBlob, pdfFilename);
+                            setTimeout(() => {
+                                fallbackMobileDownload(excelBlob, excelFilename);
+                            }, 400);
                             alert("Your browser does not support direct attachments. The Material Request PDF and FBOM Excel have been downloaded to your device.");
                         });
                     }
@@ -1449,9 +1452,9 @@ function generateFBOMWorkbook() {
             fbomShape = "BY";
             // For BY: shape should be BY and description/dimension should be exactly whatever they typed
         } else if (fbomShape === "QIW") {
-            fbomShape = "BY"; // "when they selct the QIW in the FBOM the shape shuold be BY and in discription it should be QIW- what ever they type"
-            const cleanDim = fbomDim.replace(/^QIW-?\s*/i, "").trim();
-            fbomDim = `QIW-${cleanDim}`;
+            fbomShape = "BY";
+            // Map shape to 'BY' and keep description exactly as entered (no QIW- prefix)
+            fbomDim = fbomDim.trim();
         } else if (fbomShape) {
             // Standard shapes: clean leading shape prefix from dimension to keep FBOM clean (e.g. if they typed "W8x10" under shape "W", write "8x10")
             const prefixRegex = new RegExp("^" + fbomShape + "\\s*-?\\s*", "i");
