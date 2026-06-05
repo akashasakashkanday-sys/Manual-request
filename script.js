@@ -1049,6 +1049,8 @@ function triggerEmailLaunch() {
     bodyText += `Requested by: Field Engineering Representative\n`;
     bodyText += `Quality Ironworks Field Portal System`;
 
+
+
     // 1. Generate PDF blob and convert to Base64
     generatePDFBlob()
         .then(pdfBlob => {
@@ -1068,8 +1070,8 @@ function triggerEmailLaunch() {
                 excelBase64: excelBase64,
                 pdfFilename: getPDFFilename(),
                 excelFilename: getExcelFilename(),
-                cc: "gbabin@qiworks.com; mvancha@qiworks.com",
-                subject: `Material Request - Job ${jobNumFinal} - ${jobNameFinal}`,
+                cc: "Manual@qiworks.com",
+                subject: "QIW Manual Request",
                 body: bodyText
             };
             
@@ -1204,8 +1206,8 @@ function triggerEmailLaunch() {
                             const pdfBase64Wrapped = wrapFunc(pdfBase64);
                             const excelBase64Wrapped = wrapFunc(excelBase64);
                             
-                            const ccList = "gbabin@qiworks.com; mvancha@qiworks.com";
-                            const subjectText = `Material Request - Job ${jobNumFinal} - ${jobNameFinal}`;
+                            const ccList = "Manual@qiworks.com";
+                            const subjectText = "QIW Manual Request";
                             
                             // Construct EML MIME structure
                             const emlParts = [];
