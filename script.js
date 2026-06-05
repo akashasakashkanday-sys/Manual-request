@@ -977,23 +977,50 @@ function fallbackMobileDownload(blob, filename) {
 
 // PDF Export Execution
 function downloadMaterialRequestPDF() {
+    const pdfFilename = getPDFFilename();
+    const excelFilename = getExcelFilename();
+    
+    if (isMobile) {
+        return generatePDFBlob()
+            .then(pdfBlob => {
+                const wb = generateFBOMWorkbook();
+                if (!wb) throw new Error("No items added yet to compile Excel.");
+                const excelBytes = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+                const excelBlob = new Blob([excelBytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                
+                const pdfFile = new File([pdfBlob], pdfFilename, { type: 'application/pdf' });
+                const excelFile = new File([excelBlob], excelFilename, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                
+                // If Web Share is supported on mobile, share both files at once!
+                if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile, excelFile] })) {
+                    return navigator.share({
+                        files: [pdfFile, excelFile],
+                        title: `${pdfFilename} & ${excelFilename}`,
+                        text: "Save your Manual Shop Drawing PDF and FBOM Excel sheet."
+                    });
+                } else {
+                    // Fallback to separate mobile previews/downloads
+                    fallbackMobileDownload(pdfBlob, pdfFilename);
+                    setTimeout(() => {
+                        fallbackMobileDownload(excelBlob, excelFilename);
+                    }, 400);
+                }
+            })
+            .catch(err => {
+                console.error("Mobile sequential download/share failure: ", err);
+            });
+    }
+    
+    // Desktop: Trigger both PDF and Excel downloads synchronously in the user gesture loop
     return generatePDFBlob()
         .then(pdfBlob => {
-            const pdfFilename = getPDFFilename();
-            
-            // Trigger PDF download using optimized helper
             triggerDownload(pdfBlob, pdfFilename);
-            
-            console.log("Material Request PDF generated successfully!");
-            
-            // Automatically download the FBOM Excel sheet (using same robust helper)
-            setTimeout(() => {
-                downloadFBOMExcel();
-            }, 800);
+            downloadFBOMExcel();
+            console.log("Material Request PDF & FBOM Excel downloaded successfully!");
         })
         .catch(err => {
-            console.error("PDF generation failure: ", err);
-            alert("Encountered error generating PDF. Please ensure your browser supports modern rendering.");
+            console.error("PDF/Excel download failure: ", err);
+            alert("Encountered error generating files.");
         });
 }
 
