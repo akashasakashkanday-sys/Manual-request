@@ -916,30 +916,18 @@ function generatePDFBlob() {
 }
 
 // Helper for triggering file downloads on mobile and desktop
-function triggerDownload(blob, filename, useIframe = false) {
+function triggerDownload(blob, filename) {
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = filename;
     
-    if (useIframe && isMobile) {
-        // Use hidden iframe to download file to bypass mobile multiple-download block
-        const iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        iframe.src = link.href;
-        document.body.appendChild(iframe);
-        setTimeout(() => {
-            document.body.removeChild(iframe);
-            URL.revokeObjectURL(link.href);
-        }, 2000);
-    } else {
-        // Standard anchor click
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        setTimeout(() => {
-            URL.revokeObjectURL(link.href);
-        }, 200);
-    }
+    // Standard anchor click (most reliable on modern iOS & Android)
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => {
+        URL.revokeObjectURL(link.href);
+    }, 200);
 }
 
 // PDF Export Execution
